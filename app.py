@@ -96,7 +96,7 @@ def get_status_emoji(player_name):
     if entry_ts is None: return "🟢"
     tiempo_turno = (time.time() - entry_ts) / 60
     if tiempo_turno >= 2: return "🔴"
-    if tiempo_turno >= 1: return "🟡"  # CAMBIADO A AMARILLO
+    if tiempo_turno >= 1: return "🟡"
     return "🟢"
 
 def execute_swap(player_in, player_out):
@@ -213,7 +213,8 @@ if any(t > 0 for t in st.session_state.accumulated_time.values()) or st.session_
         if acc > 0 or entry_ts:
             total_segundos = acc + (now - entry_ts if entry_ts else 0)
             data.append({"Jugador": p, "Posición": st.session_state.last_position[p], "Minutos Totales": format_time(total_segundos), "Estado Turno": f"{'🏃' if entry_ts else '🪑'} {get_status_emoji(p)}"})
-    st.dataframe(data, width=None) 
+    # CORRECCIÓN FINAL: width='stretch' reemplaza a None para evitar StreamlitInvalidWidthError
+    st.dataframe(data, width='stretch') 
 
 if st.session_state.match_running:
     time.sleep(1)
