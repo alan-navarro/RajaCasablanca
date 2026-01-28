@@ -11,36 +11,62 @@ from datetime import datetime
 # CONFIGURACIÓN GOOGLE SHEETS
 # =========================
 import json
+@st.cache_resource(show_spinner=False)
+def get_gspread_client():
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    if "gcp_service_account" in st.secrets:
+        creds_info = st.secrets["gcp_service_account"]
+
+        if isinstance(creds_info, str):
+            creds_info = json.loads(creds_info)
+
+        info = dict(creds_info)
+        if "\\n" in info["private_key"]:
+            info["private_key"] = info["private_key"].replace("\\n", "\n")
+
+        creds = Credentials.from_service_account_info(info, scopes=scope)
+    else:
+        creds = Credentials.from_service_account_file(
+            "info-bot-mmwp-7183fe52f9b4.json",
+            scopes=scope
+        )
+
+    return gspread.authorize(creds)
+
 
 def log_to_sheets(data_list):
     if not data_list:
-        return
+        return False
+
+    status = st.empty()
+    status.info("⏳ Registrando datos en Google Sheets...")
+
     try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        
-        # Lógica híbrida: Si existe st.secrets usa la nube, si no, busca el archivo local
-        if "gcp_service_account" in st.secrets:
-            # Para Streamlit Cloud
-            creds_info = st.secrets["gcp_service_account"]
-            # Si el secreto es un string (JSON), lo cargamos; si es un dict, se usa directo
-            if isinstance(creds_info, str):
-                creds_info = json.loads(creds_info)
-            creds = Credentials.from_service_account_info(creds_info, scopes=scope)
-        else:
-            # Para tu PC local
-            creds = Credentials.from_service_account_file("excel_cred.json", scopes=scope)
-            
-        client = gspread.authorize(creds)
-        sheet = client.open("Fut").worksheet("tactica")
-        
-        # Convertir datos a string para evitar errores de formato
+        client = get_gspread_client()
+        sheet = client.open("Fut").worksheet("logger1")
+
         formatted_data = [[str(cell) for cell in row] for row in data_list]
-        sheet.append_rows(formatted_data)
+
+        sheet.append_rows(
+            formatted_data,
+            value_input_option="USER_ENTERED"
+        )
+
+        status.empty()
         st.toast(f"✅ {len(data_list)} filas registradas", icon="📊")
         print(f"✅ Log exitoso: {len(data_list)} filas registradas.")
-        
+        return True
+
     except Exception as e:
-        st.error(f"❌ Error: {e}")
+        status.empty()
+        st.session_state["_last_log_error"] = str(e)
+        st.error(f"❌ Error en Google Sheets: {e}")
+        print(f"❌ DEBUG ERROR: {e}")
+        return False
 
 # =========================
 # CONFIGURACIÓN Y DATOS
@@ -233,7 +259,9 @@ else:
                 log_batch.append([ts, p_exp, pos_label, st.session_state.formacion_elegida, minutos, 1])
             
             # EL REGISTRO OCURRE AQUÍ
-            log_to_sheets(log_batch)
+            ok = log_to_sheets(log_batch)
+            if not ok:
+                st.stop()
             st.rerun()
             
     with c4:
@@ -245,21 +273,28 @@ else:
                 st.rerun()
     
     st.write("")
-    if st.button("🛑 FINALIZAR PARTIDO", type="secondary", width="stretch"):
-        update_timers()
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_batch = []
-        for p, t in st.session_state.accumulated_time.items():
-            if t > 0:
-                pos_label = st.session_state.last_position[p]
-                minutos = round(t/60, 2)
-                exp_val = 1 if p in st.session_state.expulsados else 0
-                log_batch.append([ts, p, pos_label, st.session_state.formacion_elegida, minutos, exp_val])
+if st.button("🛑 FINALIZAR PARTIDO", type="secondary", use_container_width=True):
+    update_timers()
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_batch = []
+    
+    for p, t in st.session_state.accumulated_time.items():
+        if t > 0:
+            pos_label = st.session_state.last_position[p]
+            minutos = round(t/60, 2)
+            exp_val = 1 if p in st.session_state.expulsados else 0
+            log_batch.append([ts, p, pos_label, st.session_state.formacion_elegida, minutos, exp_val])
+    
+    if log_batch:
+        ok = log_to_sheets(log_batch)
+        if not ok:
+            st.error("❌ No se pudo guardar el partido. NO se reinicia el estado.")
+            st.stop()
+    
+        time.sleep(2) 
         
-        # EL REGISTRO OCURRE AQUÍ
-        log_to_sheets(log_batch)
-        inicializar_estado()
-        st.rerun()
+    inicializar_estado()
+    st.rerun()
     
     elapsed = time.time() - st.session_state.start_match_time
     st.markdown(f"<h2 style='text-align: center; color: #ff4b4b;'>⏱️ {format_time(elapsed)}</h2>", unsafe_allow_html=True)
@@ -288,3 +323,4 @@ if any(t > 0 for t in st.session_state.accumulated_time.values()) or st.session_
 if st.session_state.match_running:
     time.sleep(1)
     st.rerun()
+
