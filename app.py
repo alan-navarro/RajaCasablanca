@@ -10,32 +10,37 @@ from datetime import datetime
 # =========================
 # CONFIGURACIÓN GOOGLE SHEETS
 # =========================
+import json
+
 def log_to_sheets(data_list):
     if not data_list:
         return
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         
-        # 1. Asegúrate de que la ruta sea absoluta si estás en local
-        import os
-        path = os.path.join(os.path.dirname(__file__), "excel_cred.json")
-        
-        creds = Credentials.from_service_account_file(path, scopes=scope)
+        # Lógica híbrida: Si existe st.secrets usa la nube, si no, busca el archivo local
+        if "gcp_service_account" in st.secrets:
+            # Para Streamlit Cloud
+            creds_info = st.secrets["gcp_service_account"]
+            # Si el secreto es un string (JSON), lo cargamos; si es un dict, se usa directo
+            if isinstance(creds_info, str):
+                creds_info = json.loads(creds_info)
+            creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        else:
+            # Para tu PC local
+            creds = Credentials.from_service_account_file("excel_cred.json", scopes=scope)
+            
         client = gspread.authorize(creds)
+        sheet = client.open("Fut").worksheet("tactica")
         
-        # 2. Abrir por nombre y worksheet
-        sheet = client.open("Fut").worksheet("logger")
-        
-        # 3. Convertir todo a string para evitar errores de formato JSON en el envío
+        # Convertir datos a string para evitar errores de formato
         formatted_data = [[str(cell) for cell in row] for row in data_list]
-        
         sheet.append_rows(formatted_data)
         st.toast(f"✅ {len(data_list)} filas registradas", icon="📊")
         print(f"✅ Log exitoso: {len(data_list)} filas registradas.")
-
+        
     except Exception as e:
-        st.error(f"❌ Error de Conexión: {e}")
-        print(f"DEBUG: {e}")
+        st.error(f"❌ Error: {e}")
 
 # =========================
 # CONFIGURACIÓN Y DATOS
