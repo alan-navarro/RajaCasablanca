@@ -12,17 +12,12 @@ import json
 # =========================
 @st.cache_resource(show_spinner=False)
 def get_gspread_client():
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     if "gcp_service_account" in st.secrets:
         creds_info = st.secrets["gcp_service_account"]
-        if isinstance(creds_info, str):
-            creds_info = json.loads(creds_info)
+        if isinstance(creds_info, str): creds_info = json.loads(creds_info)
         info = dict(creds_info)
-        if "\\n" in info["private_key"]:
-            info["private_key"] = info["private_key"].replace("\\n", "\n")
+        if "\\n" in info["private_key"]: info["private_key"] = info["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(info, scopes=scope)
     else:
         creds = Credentials.from_service_account_file("info-bot-mmwp-7183fe52f9b4.json", scopes=scope)
@@ -30,18 +25,14 @@ def get_gspread_client():
 
 def log_to_sheets(data_list):
     if not data_list: return False
-    status = st.empty()
-    status.info("⏳ Registrando datos en Google Sheets...")
     try:
         client = get_gspread_client()
         sheet = client.open("Fut").worksheet("logger1")
         formatted_data = [[str(cell) for cell in row] for row in data_list]
         sheet.append_rows(formatted_data, value_input_option="USER_ENTERED")
-        status.empty()
         st.toast(f"✅ {len(data_list)} filas registradas", icon="📊")
         return True
     except Exception as e:
-        status.empty()
         st.error(f"❌ Error en Google Sheets: {e}")
         return False
 
@@ -53,28 +44,17 @@ class Player:
     name: str
     features: Set[str]
 
-FORMACIONES = {
-    "2-3-1": [2, 3, 1],
-    "2-2-2": [2, 2, 2],
-    "3-2-1": [3, 2, 1]
-}
+FORMACIONES = {"2-3-1": [2, 3, 1], "2-2-2": [2, 2, 2], "3-2-1": [3, 2, 1]}
 
 def inicializar_estado():
     st.session_state.players_data = {
-        "Zorry": Player("Zorry", {"PO"}),
-        "Alan": Player("Alan", {"PO","ML", "MC", "AT"}),
-        "Kevin": Player("Kevin", {"ML", "MC", "DF"}),
-        "Hieu": Player("Hieu", {"ML"}),
-        "Nam": Player("Nam", {"ML", "DF"}),
-        "Luis": Player("Luis", {"DF"}),
-        "Quero": Player("Quero", {"PO","MC", "DF", "ML"}),
-        "Loco": Player("Loco", {"PO","DF", "ML"}),
-        "Jaír": Player("Jaír", {"ML", "DF"}),
-        "JP": Player("JP", {"AT", "ML"}),
-        "Báez": Player("Báez", {"ML", "MC"}),
-        "Mario": Player("Mario", {"MC", "DF"}),
-        "Fer": Player("Fer", {"AT"}),
-        "Portero invitado": Player("Portero invitado", {"PO"}),
+        "Zorry": Player("Zorry", {"PO"}), "Alan": Player("Alan", {"PO","ML", "MC", "AT"}),
+        "Kevin": Player("Kevin", {"ML", "MC", "DF"}), "Hieu": Player("Hieu", {"ML"}),
+        "Nam": Player("Nam", {"ML", "DF"}), "Luis": Player("Luis", {"DF"}),
+        "Quero": Player("Quero", {"PO","MC", "DF", "ML"}), "Loco": Player("Loco", {"PO","DF", "ML"}),
+        "Jaír": Player("Jaír", {"ML", "DF"}), "JP": Player("JP", {"AT", "ML"}),
+        "Báez": Player("Báez", {"ML", "MC"}), "Mario": Player("Mario", {"MC", "DF"}),
+        "Fer": Player("Fer", {"AT"}), "Portero invitado": Player("Portero invitado", {"PO"}),
         "Jugador 1": Player("Jugador 1", {"ML", "MC", "AT", "DF"}),
         "Jugador 2": Player("Jugador 2", {"ML", "MC", "AT", "DF"}),
         "Jugador 3": Player("Jugador 3", {"ML", "MC", "AT", "DF"}),
@@ -88,8 +68,7 @@ def inicializar_estado():
     st.session_state.expulsados = []
     st.session_state.formacion_elegida = "2-3-1"
 
-if 'players_data' not in st.session_state:
-    inicializar_estado()
+if 'players_data' not in st.session_state: inicializar_estado()
 
 # =========================
 # LÓGICA AUXILIAR
@@ -109,38 +88,28 @@ def update_last_positions():
             st.session_state.last_position[p_name] = pos
 
 def format_time(seconds):
-    mins = int(seconds // 60)
-    secs = int(seconds % 60)
+    mins, secs = divmod(int(seconds), 60)
     return f"{mins:02d}:{secs:02d}"
 
 def get_status_emoji(player_name):
-    """
-    NUEVA LÓGICA: Calcula el semáforo basado en el tiempo de la estancia ACTUAL.
-    Si está en banca (entry_timestamp es None), devuelve verde.
-    """
     entry_ts = st.session_state.entry_timestamp.get(player_name)
-    if entry_ts is None:
-        return "🟢"
-    
-    # Tiempo transcurrido en el turno actual
+    if entry_ts is None: return "🟢"
     tiempo_turno = (time.time() - entry_ts) / 60
     if tiempo_turno >= 2: return "🔴"
     if tiempo_turno >= 1: return "🟠"
     return "🟢"
 
-def update_timers():
-    now = time.time()
-    for name in st.session_state.players_data:
-        if st.session_state.entry_timestamp[name] is not None:
-            st.session_state.accumulated_time[name] += now - st.session_state.entry_timestamp[name]
-            st.session_state.entry_timestamp[name] = now
-
 def execute_swap(player_in, player_out):
-    update_timers()
     now = time.time()
-    # Al salir, el timestamp es None. Al entrar, es 'now'. Esto resetea el semáforo.
+    # 1. Guardar el tiempo acumulado del que sale y limpiar su timestamp
+    duracion_ultimo_turno = now - st.session_state.entry_timestamp[player_out]
+    st.session_state.accumulated_time[player_out] += duracion_ultimo_turno
     st.session_state.entry_timestamp[player_out] = None
+    
+    # 2. Iniciar el timestamp del que entra
     st.session_state.entry_timestamp[player_in] = now
+    
+    # 3. Actualizar formación
     for cid, players in st.session_state.lineup.items():
         if player_out in players:
             st.session_state.lineup[cid] = [player_in if p == player_out else p for p in players]
@@ -159,17 +128,13 @@ st.title("⚽ RCB Tactical Time Tracker")
 
 with st.sidebar:
     st.header("🪑 Banca")
-    bench_list = get_bench()
-    for b in bench_list:
-        last_p = st.session_state.last_position[b]
-        # Mostramos semáforo en banca (siempre será verde por la nueva lógica)
-        st.write(f"{get_status_emoji(b)} **{b}** (Últ: {last_p})")
+    for b in get_bench():
+        st.write(f"{get_status_emoji(b)} **{b}** (Últ: {st.session_state.last_position[b]})")
     
     if st.session_state.expulsados:
         st.divider()
         st.header("🟥 Expulsados")
-        for ex in st.session_state.expulsados:
-            st.write(f"- ~~{ex}~~")
+        for ex in st.session_state.expulsados: st.write(f"- ~~{ex}~~")
 
 # --- CONFIGURACIÓN TÁCTICA ---
 st.subheader("📐 Configuración Táctica")
@@ -183,37 +148,24 @@ if formacion_actual != st.session_state.formacion_elegida:
     st.rerun()
 
 f_nums = FORMACIONES[st.session_state.formacion_elegida]
-CONFIG_UI = {
-    "C0_PO":  {"label": "Portero", "size": 1, "req": "PO"},
-    "C1_DEF": {"label": "Defensa", "size": f_nums[0], "req": "DF"},
-    "C2_MID": {"label": "Mediocampo", "size": f_nums[1], "req": "ML"}, 
-    "C3_ATK": {"label": "Ataque", "size": f_nums[2], "req": "AT"}
-}
+CONFIG_UI = {"C0_PO": {"label": "Portero", "size": 1, "req": "PO"}, "C1_DEF": {"label": "Defensa", "size": f_nums[0], "req": "DF"},
+             "C2_MID": {"label": "Mediocampo", "size": f_nums[1], "req": "ML"}, "C3_ATK": {"label": "Ataque", "size": f_nums[2], "req": "AT"}}
 
 cols_aln = st.columns(4)
 for i, (cid, cfg) in enumerate(CONFIG_UI.items()):
     with cols_aln[i]:
         others = [p for k, v in st.session_state.lineup.items() if k != cid for p in v]
-        opts = [n for n, p in st.session_state.players_data.items() 
-                if cfg["req"] in p.features and n not in others and n not in st.session_state.expulsados]
-        
-        selected = st.multiselect(f"{cfg['label']} ({cfg['size']})", opts, 
-                                  default=st.session_state.lineup[cid], 
-                                  max_selections=cfg["size"], key=f"ui_{cid}",
-                                  disabled=st.session_state.match_running)
-        if not st.session_state.match_running:
-            st.session_state.lineup[cid] = selected
+        opts = [n for n, p in st.session_state.players_data.items() if cfg["req"] in p.features and n not in others and n not in st.session_state.expulsados]
+        selected = st.multiselect(f"{cfg['label']} ({cfg['size']})", opts, default=st.session_state.lineup[cid], max_selections=cfg["size"], key=f"ui_{cid}", disabled=st.session_state.match_running)
+        if not st.session_state.match_running: st.session_state.lineup[cid] = selected
 
 # --- GESTIÓN EN VIVO ---
 st.divider()
-st.subheader("🔄 Gestión en Vivo")
-
 if not st.session_state.match_running:
     total_necesario = sum(f_nums) + 1
     total_actual = sum(len(v) for v in st.session_state.lineup.values())
     if st.button("🚀 INICIAR PARTIDO", type="primary", width='stretch', disabled=(total_actual < total_necesario)):
-        st.session_state.match_running = True
-        st.session_state.start_match_time = time.time()
+        st.session_state.match_running, st.session_state.start_match_time = True, time.time()
         update_last_positions()
         now = time.time()
         for p_list in st.session_state.lineup.values():
@@ -222,81 +174,54 @@ if not st.session_state.match_running:
 else:
     c1, c2, c3, c4 = st.columns([1.5, 1.5, 2, 1])
     fmt_txt = f"'{st.session_state.formacion_elegida}"
-
-    with c1:
-        p_in = st.selectbox("Entra:", ["-"] + get_bench())
+    with c1: p_in = st.selectbox("Entra:", ["-"] + get_bench())
     with c2:
         on_field_list = [p for plist in st.session_state.lineup.values() for p in plist]
         p_out = st.selectbox("Sale:", ["-"] + on_field_list)
     with c3:
-        posibles_expulsar = [n for n in st.session_state.players_data if n not in st.session_state.expulsados]
-        p_exp_select = st.selectbox("🟥 Expulsar:", ["-"] + posibles_expulsar)
+        p_exp_select = st.selectbox("🟥 Expulsar:", ["-"] + [n for n in st.session_state.players_data if n not in st.session_state.expulsados])
         if p_exp_select != "-":
-            update_timers()
-            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            pos_label = st.session_state.last_position[p_exp_select]
-            minutos = round(st.session_state.accumulated_time[p_exp_select]/60, 2)
+            now = time.time()
+            if st.session_state.entry_timestamp[p_exp_select]:
+                st.session_state.accumulated_time[p_exp_select] += now - st.session_state.entry_timestamp[p_exp_select]
             st.session_state.expulsados.append(p_exp_select)
             st.session_state.entry_timestamp[p_exp_select] = None
             for cid in st.session_state.lineup:
                 if p_exp_select in st.session_state.lineup[cid]: st.session_state.lineup[cid].remove(p_exp_select)
-            ok = log_to_sheets([[ts, p_exp_select, pos_label, fmt_txt, minutos, 1]])
-            if not ok: st.stop()
+            log_to_sheets([[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), p_exp_select, st.session_state.last_position[p_exp_select], fmt_txt, round(st.session_state.accumulated_time[p_exp_select]/60, 2), 1]])
             st.rerun()
-            
     with c4:
         st.write(" ")
         st.write(" ")
-        if p_in != "-" and p_out != "-":
-            if st.button("✅ Swap", type="primary", width='stretch'):
-                execute_swap(p_in, p_out)
-                st.rerun()
+        if p_in != "-" and p_out != "-" and st.button("✅ Swap", type="primary", width='stretch'):
+            execute_swap(p_in, p_out)
+            st.rerun()
 
 if st.session_state.match_running:
     if st.button("🛑 FINALIZAR PARTIDO", type="secondary", width='stretch'):
-        update_timers()
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_batch = []
+        now = time.time()
+        log_batch, ts = [], datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         fmt_txt = f"'{st.session_state.formacion_elegida}"
-        for p, t in st.session_state.accumulated_time.items():
-            if t > 0:
-                pos_label = st.session_state.last_position[p]
-                minutos = round(t/60, 2)
-                exp_val = 1 if p in st.session_state.expulsados else 0
-                log_batch.append([ts, p, pos_label, fmt_txt, minutos, exp_val])
-        if log_batch:
-            ok = log_to_sheets(log_batch)
-            if ok: time.sleep(2) 
+        for p, acc in st.session_state.accumulated_time.items():
+            total = acc + (now - st.session_state.entry_timestamp[p] if st.session_state.entry_timestamp[p] else 0)
+            if total > 0:
+                log_batch.append([ts, p, st.session_state.last_position[p], fmt_txt, round(total/60, 2), 1 if p in st.session_state.expulsados else 0])
+        if log_batch: log_to_sheets(log_batch)
         inicializar_estado()
         st.rerun()
-    
     elapsed = time.time() - st.session_state.start_match_time
     st.markdown(f"<h2 style='text-align: center; color: #ff4b4b;'>⏱️ {format_time(elapsed)}</h2>", unsafe_allow_html=True)
 
 # --- TABLA TIEMPO REAL ---
 st.divider()
 if any(t > 0 for t in st.session_state.accumulated_time.values()) or st.session_state.match_running:
-    # No llamamos a update_timers aquí para no generar escrituras constantes en acc_time
-    # Solo calculamos visualmente para la tabla
-    data = []
-    now = time.time()
+    data, now = [], time.time()
     for p in st.session_state.players_data:
         if p in st.session_state.expulsados: continue
-        acc = st.session_state.accumulated_time[p]
-        entry_ts = st.session_state.entry_timestamp[p]
-        
+        acc, entry_ts = st.session_state.accumulated_time[p], st.session_state.entry_timestamp[p]
         if acc > 0 or entry_ts:
-            # Minutos totales = lo que ya tenía + (ahora - cuando entró si está en campo)
             total_segundos = acc + (now - entry_ts if entry_ts else 0)
-            pos = st.session_state.last_position[p]
-            icono = "🏃" if entry_ts else "🪑"
-            semaforo = get_status_emoji(p) # Usa la nueva lógica de estancia actual
-            data.append({
-                "Jugador": p, 
-                "Posición": pos, 
-                "Minutos Totales": format_time(total_segundos),
-                "Estado Turno": f"{icono} {semaforo}"
-            })
+            data.append({"Jugador": p, "Posición": st.session_state.last_position[p], "Minutos Totales": format_time(total_segundos), "Estado Turno": f"{'🏃' if entry_ts else '🪑'} {get_status_emoji(p)}"})
     st.dataframe(data, use_container_width=True)
 
 if st.session_state.match_running:
