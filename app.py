@@ -1,4 +1,3 @@
-
 import streamlit as st
 import time
 import gspread
@@ -6,11 +5,11 @@ from google.oauth2.service_account import Credentials
 from dataclasses import dataclass
 from typing import Set
 from datetime import datetime
+import json
 
 # =========================
 # CONFIGURACIÓN GOOGLE SHEETS
 # =========================
-import json
 @st.cache_resource(show_spinner=False)
 def get_gspread_client():
     scope = [
@@ -20,23 +19,18 @@ def get_gspread_client():
 
     if "gcp_service_account" in st.secrets:
         creds_info = st.secrets["gcp_service_account"]
-
         if isinstance(creds_info, str):
             creds_info = json.loads(creds_info)
-
         info = dict(creds_info)
         if "\\n" in info["private_key"]:
             info["private_key"] = info["private_key"].replace("\\n", "\n")
-
         creds = Credentials.from_service_account_info(info, scopes=scope)
     else:
         creds = Credentials.from_service_account_file(
             "info-bot-mmwp-7183fe52f9b4.json",
             scopes=scope
         )
-
     return gspread.authorize(creds)
-
 
 def log_to_sheets(data_list):
     if not data_list:
@@ -49,8 +43,8 @@ def log_to_sheets(data_list):
         client = get_gspread_client()
         sheet = client.open("Fut").worksheet("logger1")
 
+        # El parámetro USER_ENTERED permite que Sheets interprete el "'" como formato de texto
         formatted_data = [[str(cell) for cell in row] for row in data_list]
-
         sheet.append_rows(
             formatted_data,
             value_input_option="USER_ENTERED"
@@ -58,14 +52,11 @@ def log_to_sheets(data_list):
 
         status.empty()
         st.toast(f"✅ {len(data_list)} filas registradas", icon="📊")
-        print(f"✅ Log exitoso: {len(data_list)} filas registradas.")
         return True
 
     except Exception as e:
         status.empty()
-        st.session_state["_last_log_error"] = str(e)
         st.error(f"❌ Error en Google Sheets: {e}")
-        print(f"❌ DEBUG ERROR: {e}")
         return False
 
 # =========================
@@ -113,14 +104,6 @@ def inicializar_estado():
 
 if 'players_data' not in st.session_state:
     inicializar_estado()
-
-f_nums = FORMACIONES[st.session_state.formacion_elegida]
-CONFIG = {
-    "C0_PO":  {"label": "Portero", "size": 1, "req": "PO"},
-    "C1_DEF": {"label": "Defensa", "size": f_nums[0], "req": "DF"},
-    "C2_MID": {"label": "Mediocampo", "size": f_nums[1], "req": "ML"}, 
-    "C3_ATK": {"label": "Ataque", "size": f_nums[2], "req": "AT"}
-}
 
 # =========================
 # LÓGICA AUXILIAR
@@ -189,21 +172,29 @@ with st.sidebar:
         st.divider()
         st.header("🟥 Expulsados")
         for ex in st.session_state.expulsados:
-            st.write(f"- ~{ex}~")
+            st.write(f"- ~~{ex}~~")
 
 # --- CONFIGURACIÓN TÁCTICA ---
 st.subheader("📐 Configuración Táctica")
-formacion = st.selectbox("Formación:", options=list(FORMACIONES.keys()), 
+formacion_actual = st.selectbox("Formación:", options=list(FORMACIONES.keys()), 
                          index=list(FORMACIONES.keys()).index(st.session_state.formacion_elegida),
                          disabled=st.session_state.match_running)
 
-if formacion != st.session_state.formacion_elegida:
-    st.session_state.formacion_elegida = formacion
+if formacion_actual != st.session_state.formacion_elegida:
+    st.session_state.formacion_elegida = formacion_actual
     st.session_state.lineup = {"C0_PO": [], "C1_DEF": [], "C2_MID": [], "C3_ATK": []}
     st.rerun()
 
+f_nums = FORMACIONES[st.session_state.formacion_elegida]
+CONFIG_UI = {
+    "C0_PO":  {"label": "Portero", "size": 1, "req": "PO"},
+    "C1_DEF": {"label": "Defensa", "size": f_nums[0], "req": "DF"},
+    "C2_MID": {"label": "Mediocampo", "size": f_nums[1], "req": "ML"}, 
+    "C3_ATK": {"label": "Ataque", "size": f_nums[2], "req": "AT"}
+}
+
 cols_aln = st.columns(4)
-for i, (cid, cfg) in enumerate(CONFIG.items()):
+for i, (cid, cfg) in enumerate(CONFIG_UI.items()):
     with cols_aln[i]:
         others = [p for k, v in st.session_state.lineup.items() if k != cid for p in v]
         opts = [n for n, p in st.session_state.players_data.items() 
@@ -223,7 +214,7 @@ st.subheader("🔄 Gestión en Vivo")
 if not st.session_state.match_running:
     total_necesario = sum(f_nums) + 1
     total_actual = sum(len(v) for v in st.session_state.lineup.values())
-    if st.button("🚀 INICIAR PARTIDO", type="primary", width="stretch", disabled=(total_actual < total_necesario)):
+    if st.button("🚀 INICIAR PARTIDO", type="primary", use_container_width=True, disabled=(total_actual < total_necesario)):
         st.session_state.match_running = True
         st.session_state.start_match_time = time.time()
         update_last_positions()
@@ -233,12 +224,15 @@ if not st.session_state.match_running:
         st.rerun()
 else:
     c1, c2, c3, c4 = st.columns([1.5, 1.5, 2, 1])
+    # Forzamos texto en la formación para evitar error de fecha
+    fmt_txt = f"'{st.session_state.formacion_elegida}"
+
     with c1:
         p_in = st.selectbox("Entra:", ["-"] + get_bench())
     with c2:
         if p_in != "-":
             feats_in = st.session_state.players_data[p_in].features
-            targets = [p for cid, players in st.session_state.lineup.items() if CONFIG[cid]["req"] in feats_in for p in players]
+            targets = [p for cid, players in st.session_state.lineup.items() if CONFIG_UI[cid]["req"] in feats_in for p in players]
             p_out = st.selectbox("Sale:", ["-"] + targets)
         else:
             p_out = st.selectbox("Sale:", ["-"], disabled=True)
@@ -256,45 +250,43 @@ else:
                 st.session_state.entry_timestamp[p_exp] = None
                 for cid in st.session_state.lineup:
                     if p_exp in st.session_state.lineup[cid]: st.session_state.lineup[cid].remove(p_exp)
-                log_batch.append([ts, p_exp, pos_label, st.session_state.formacion_elegida, minutos, 1])
+                log_batch.append([ts, p_exp, pos_label, fmt_txt, minutos, 1])
             
-            # EL REGISTRO OCURRE AQUÍ
             ok = log_to_sheets(log_batch)
-            if not ok:
-                st.stop()
+            if not ok: st.stop()
             st.rerun()
             
     with c4:
         st.write(" ")
         st.write(" ")
         if p_in != "-" and p_out != "-":
-            if st.button("✅ Swap", type="primary", width="stretch"):
+            if st.button("✅ Swap", type="primary", use_container_width=True):
                 execute_swap(p_in, p_out)
                 st.rerun()
-    
-    st.write("")
-if st.button("🛑 FINALIZAR PARTIDO", type="secondary", use_container_width=True):
-    update_timers()
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_batch = []
-    
-    for p, t in st.session_state.accumulated_time.items():
-        if t > 0:
-            pos_label = st.session_state.last_position[p]
-            minutos = round(t/60, 2)
-            exp_val = 1 if p in st.session_state.expulsados else 0
-            log_batch.append([ts, p, pos_label, st.session_state.formacion_elegida, minutos, exp_val])
-    
-    if log_batch:
-        ok = log_to_sheets(log_batch)
-        if not ok:
-            st.error("❌ No se pudo guardar el partido. NO se reinicia el estado.")
-            st.stop()
-    
-        time.sleep(2) 
+
+if st.session_state.match_running:
+    if st.button("🛑 FINALIZAR PARTIDO", type="secondary", use_container_width=True):
+        update_timers()
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_batch = []
+        fmt_txt = f"'{st.session_state.formacion_elegida}"
         
-    inicializar_estado()
-    st.rerun()
+        for p, t in st.session_state.accumulated_time.items():
+            if t > 0:
+                pos_label = st.session_state.last_position[p]
+                minutos = round(t/60, 2)
+                exp_val = 1 if p in st.session_state.expulsados else 0
+                log_batch.append([ts, p, pos_label, fmt_txt, minutos, exp_val])
+        
+        if log_batch:
+            ok = log_to_sheets(log_batch)
+            if not ok:
+                st.error("❌ No se pudo guardar el partido. NO se reinicia el estado.")
+                st.stop()
+            time.sleep(2) 
+            
+        inicializar_estado()
+        st.rerun()
     
     elapsed = time.time() - st.session_state.start_match_time
     st.markdown(f"<h2 style='text-align: center; color: #ff4b4b;'>⏱️ {format_time(elapsed)}</h2>", unsafe_allow_html=True)
@@ -318,9 +310,8 @@ if any(t > 0 for t in st.session_state.accumulated_time.values()) or st.session_
                 "Estado": f"{icono} {semaforo}"
             })
     
-    st.dataframe(data, width="stretch")
+    st.dataframe(data, use_container_width=True)
 
 if st.session_state.match_running:
     time.sleep(1)
     st.rerun()
-
