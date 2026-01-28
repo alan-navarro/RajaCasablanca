@@ -96,20 +96,15 @@ def get_status_emoji(player_name):
     if entry_ts is None: return "🟢"
     tiempo_turno = (time.time() - entry_ts) / 60
     if tiempo_turno >= 2: return "🔴"
-    if tiempo_turno >= 1: return "🟠"
+    if tiempo_turno >= 1: return "🟡"  # CAMBIADO A AMARILLO
     return "🟢"
 
 def execute_swap(player_in, player_out):
     now = time.time()
-    # 1. Guardar el tiempo acumulado del que sale y limpiar su timestamp
-    duracion_ultimo_turno = now - st.session_state.entry_timestamp[player_out]
-    st.session_state.accumulated_time[player_out] += duracion_ultimo_turno
+    st.session_state.accumulated_time[player_out] += (now - st.session_state.entry_timestamp[player_out])
     st.session_state.entry_timestamp[player_out] = None
-    
-    # 2. Iniciar el timestamp del que entra
     st.session_state.entry_timestamp[player_in] = now
     
-    # 3. Actualizar formación
     for cid, players in st.session_state.lineup.items():
         if player_out in players:
             st.session_state.lineup[cid] = [player_in if p == player_out else p for p in players]
@@ -136,7 +131,6 @@ with st.sidebar:
         st.header("🟥 Expulsados")
         for ex in st.session_state.expulsados: st.write(f"- ~~{ex}~~")
 
-# --- CONFIGURACIÓN TÁCTICA ---
 st.subheader("📐 Configuración Táctica")
 formacion_actual = st.selectbox("Formación:", options=list(FORMACIONES.keys()), 
                          index=list(FORMACIONES.keys()).index(st.session_state.formacion_elegida),
@@ -159,12 +153,10 @@ for i, (cid, cfg) in enumerate(CONFIG_UI.items()):
         selected = st.multiselect(f"{cfg['label']} ({cfg['size']})", opts, default=st.session_state.lineup[cid], max_selections=cfg["size"], key=f"ui_{cid}", disabled=st.session_state.match_running)
         if not st.session_state.match_running: st.session_state.lineup[cid] = selected
 
-# --- GESTIÓN EN VIVO ---
 st.divider()
 if not st.session_state.match_running:
-    total_necesario = sum(f_nums) + 1
     total_actual = sum(len(v) for v in st.session_state.lineup.values())
-    if st.button("🚀 INICIAR PARTIDO", type="primary", width='stretch', disabled=(total_actual < total_necesario)):
+    if st.button("🚀 INICIAR PARTIDO", type="primary", width='stretch', disabled=(total_actual < (sum(f_nums) + 1))):
         st.session_state.match_running, st.session_state.start_match_time = True, time.time()
         update_last_positions()
         now = time.time()
@@ -212,7 +204,6 @@ if st.session_state.match_running:
     elapsed = time.time() - st.session_state.start_match_time
     st.markdown(f"<h2 style='text-align: center; color: #ff4b4b;'>⏱️ {format_time(elapsed)}</h2>", unsafe_allow_html=True)
 
-# --- TABLA TIEMPO REAL ---
 st.divider()
 if any(t > 0 for t in st.session_state.accumulated_time.values()) or st.session_state.match_running:
     data, now = [], time.time()
@@ -222,7 +213,7 @@ if any(t > 0 for t in st.session_state.accumulated_time.values()) or st.session_
         if acc > 0 or entry_ts:
             total_segundos = acc + (now - entry_ts if entry_ts else 0)
             data.append({"Jugador": p, "Posición": st.session_state.last_position[p], "Minutos Totales": format_time(total_segundos), "Estado Turno": f"{'🏃' if entry_ts else '🪑'} {get_status_emoji(p)}"})
-    st.dataframe(data, use_container_width=True)
+    st.dataframe(data, width=None) 
 
 if st.session_state.match_running:
     time.sleep(1)
