@@ -46,6 +46,15 @@ class Player:
 
 FORMACIONES = {"2-3-1": [2, 3, 1], "2-2-2": [2, 2, 2], "3-2-1": [3, 2, 1]}
 
+# Mapeo de features a contenedores para filtrado de cambios
+FEAT_TO_CID = {
+    "PO": "C0_PO",
+    "DF": "C1_DEF",
+    "MC": "C2_MID",
+    "ML": "C2_MID",
+    "AT": "C3_ATK"
+}
+
 def inicializar_estado():
     st.session_state.players_data = {
         "Zorry": Player("Zorry", {"PO"}), "Alan": Player("Alan", {"PO","ML", "MC", "AT"}),
@@ -70,9 +79,6 @@ def inicializar_estado():
 
 if 'players_data' not in st.session_state: inicializar_estado()
 
-# =========================
-# LÓGICA AUXILIAR
-# =========================
 def update_last_positions():
     formation = st.session_state.formacion_elegida
     lineup = st.session_state.lineup
@@ -104,7 +110,6 @@ def execute_swap(player_in, player_out):
     st.session_state.accumulated_time[player_out] += (now - st.session_state.entry_timestamp[player_out])
     st.session_state.entry_timestamp[player_out] = None
     st.session_state.entry_timestamp[player_in] = now
-    
     for cid, players in st.session_state.lineup.items():
         if player_out in players:
             st.session_state.lineup[cid] = [player_in if p == player_out else p for p in players]
@@ -125,7 +130,6 @@ with st.sidebar:
     st.header("🪑 Banca")
     for b in get_bench():
         st.write(f"{get_status_emoji(b)} **{b}** (Últ: {st.session_state.last_position[b]})")
-    
     if st.session_state.expulsados:
         st.divider()
         st.header("🟥 Expulsados")
@@ -150,7 +154,8 @@ for i, (cid, cfg) in enumerate(CONFIG_UI.items()):
     with cols_aln[i]:
         others = [p for k, v in st.session_state.lineup.items() if k != cid for p in v]
         opts = [n for n, p in st.session_state.players_data.items() if cfg["req"] in p.features and n not in others and n not in st.session_state.expulsados]
-        selected = st.multiselect(f"{cfg['label']} ({cfg['size']})", opts, default=st.session_state.lineup[cid], max_selections=cfg["size"], key=f"ui_{cid}", disabled=st.session_state.match_running)
+        current_default = [p for p in st.session_state.lineup[cid] if p in opts]
+        selected = st.multiselect(f"{cfg['label']} ({cfg['size']})", opts, default=current_default, max_selections=cfg["size"], key=f"ui_{cid}", disabled=st.session_state.match_running)
         if not st.session_state.match_running: st.session_state.lineup[cid] = selected
 
 st.divider()
@@ -165,11 +170,23 @@ if not st.session_state.match_running:
         st.rerun()
 else:
     c1, c2, c3, c4 = st.columns([1.5, 1.5, 2, 1])
-    fmt_txt = f"'{st.session_state.formacion_elegida}"
-    with c1: p_in = st.selectbox("Entra:", ["-"] + get_bench())
+    with c1: 
+        p_in = st.selectbox("Entra:", ["-"] + get_bench())
+    
     with c2:
-        on_field_list = [p for plist in st.session_state.lineup.values() for p in plist]
-        p_out = st.selectbox("Sale:", ["-"] + on_field_list)
+        # LÓGICA DE FILTRADO PARA "SALE"
+        if p_in != "-":
+            p_in_obj = st.session_state.players_data[p_in]
+            # Identificar qué contenedores puede ocupar el jugador que entra
+            valid_cids = {FEAT_TO_CID[f] for f in p_in_obj.features if f in FEAT_TO_CID}
+            # Filtrar jugadores en el campo que estén en esos contenedores
+            filtered_out_opts = []
+            for cid in valid_cids:
+                filtered_out_opts.extend(st.session_state.lineup.get(cid, []))
+            p_out = st.selectbox("Sale:", ["-"] + filtered_out_opts)
+        else:
+            p_out = st.selectbox("Sale:", ["-"], disabled=True)
+            
     with c3:
         p_exp_select = st.selectbox("🟥 Expulsar:", ["-"] + [n for n in st.session_state.players_data if n not in st.session_state.expulsados])
         if p_exp_select != "-":
@@ -180,7 +197,7 @@ else:
             st.session_state.entry_timestamp[p_exp_select] = None
             for cid in st.session_state.lineup:
                 if p_exp_select in st.session_state.lineup[cid]: st.session_state.lineup[cid].remove(p_exp_select)
-            log_to_sheets([[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), p_exp_select, st.session_state.last_position[p_exp_select], fmt_txt, round(st.session_state.accumulated_time[p_exp_select]/60, 2), 1]])
+            log_to_sheets([[datetime.now().strftime("%Y-%m-%d %H:%M:%S"), p_exp_select, st.session_state.last_position[p_exp_select], f"'{st.session_state.formacion_elegida}", round(st.session_state.accumulated_time[p_exp_select]/60, 2), 1]])
             st.rerun()
     with c4:
         st.write(" ")
@@ -213,7 +230,6 @@ if any(t > 0 for t in st.session_state.accumulated_time.values()) or st.session_
         if acc > 0 or entry_ts:
             total_segundos = acc + (now - entry_ts if entry_ts else 0)
             data.append({"Jugador": p, "Posición": st.session_state.last_position[p], "Minutos Totales": format_time(total_segundos), "Estado Turno": f"{'🏃' if entry_ts else '🪑'} {get_status_emoji(p)}"})
-    # CORRECCIÓN FINAL: width='stretch' reemplaza a None para evitar StreamlitInvalidWidthError
     st.dataframe(data, width='stretch') 
 
 if st.session_state.match_running:
