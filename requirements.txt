@@ -1,0 +1,5 @@
+fastapi==0.128.0
+gspread==6.2.1
+matplotlib==3.10.8
+protobuf==6.33.4
+streamlit==1.53.1
