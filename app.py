@@ -101,8 +101,8 @@ def get_status_emoji(player_name):
     entry_ts = st.session_state.entry_timestamp.get(player_name)
     if entry_ts is None: return "🟢"
     tiempo_turno = (time.time() - entry_ts) / 60
-    if tiempo_turno >= 2: return "🔴"
-    if tiempo_turno >= 1: return "🟡"
+    if tiempo_turno >= 13: return "🔴"
+    if tiempo_turno >= 9: return "🟡"
     return "🟢"
 
 def execute_swap(player_in, player_out):
